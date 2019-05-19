@@ -25,15 +25,16 @@ import java.lang.StringBuilder
 import kotlin.coroutines.CoroutineContext
 
 
-class MainActivity : AppCompatActivity(){
+class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val myAnimatorSet = MyAnimatorSet(this)
         button_start?.setOnClickListener {
-            myAnimatorSet.translationAnimation(text, PointF(100.0f, 100.0f))
-            myAnimatorSet.scaleAnimation(image)
+            myAnimatorSet.translationAnimation(text, PointF(0.0f, 900.0f))
+            myAnimatorSet.scaleAnimation(image1, PointF(0.0f, 0.0f))
+            myAnimatorSet.clockwiseRotationAnimation(image2, 360.0f)
         }
     }
 
@@ -98,6 +99,21 @@ class MainActivity : AppCompatActivity(){
             val scaleDownX = ObjectAnimator.ofFloat(v, "scaleX", minScale.x, maxScale.x)
             val animatorSet = AnimatorSet()
             animatorSet.play(scaleDownX).with(scaleDownY)
+            start(animatorSet, delay, duration)
+        }
+
+        fun rotateAnimation(v: View, dst: PointF, delay: Long = 0L, duration: Long = 500L) {
+            val rotationY = ObjectAnimator.ofFloat(v, "rotationY", v.rotationY, dst.y)
+            val rotationX = ObjectAnimator.ofFloat(v, "rotationX", v.rotationX, dst.x)
+            val animatorSet = AnimatorSet()
+            animatorSet.play(rotationX).with(rotationY)
+            start(animatorSet, delay, duration)
+        }
+
+        fun clockwiseRotationAnimation(v: View, degree: Float, delay: Long = 0L, duration: Long = 500L) {
+            val rotation = ObjectAnimator.ofFloat(v, "rotation", v.rotation, degree)
+            val animatorSet = AnimatorSet()
+            animatorSet.play(rotation)
             start(animatorSet, delay, duration)
         }
 

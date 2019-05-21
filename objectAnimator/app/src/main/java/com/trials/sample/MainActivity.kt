@@ -12,8 +12,7 @@ import android.R.attr.process
 import android.animation.Animator
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
-import android.animation.ValueAnimator.INFINITE
-import android.animation.ValueAnimator.REVERSE
+import android.animation.ValueAnimator.*
 import android.app.Activity
 import android.graphics.Point
 import android.graphics.PointF
@@ -35,15 +34,28 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         val myAnimatorSet = MyAnimatorSet(this, image1)
         button_start?.setOnClickListener {
-            myAnimatorSet.scaleAnimationInfinite(
-                PointF(0.0f, 0.0f),
-                PointF(1.0f, 1.0f),
-                MyAnimatorSet.TransformPivotType.CENTER
-            )
-            Handler().postDelayed({
-                myAnimatorSet.changeTarget(image2)
-            }, 3000L)
+            myAnimatorSet.alphaAnimation(0.0f, 1.0f)
         }
+        myAnimatorSet.setAnimationChangedListener(object : MyAnimatorSet.AnimationChangedListener() {
+            override fun onAnimationEnd(id: Int) {
+                Log.d(MainActivity::class.java.simpleName, "onAnimationEnd() id -> $id")
+                myAnimatorSet.changeTarget(nextImage(id))
+                myAnimatorSet.alphaAnimation(0.0f, 1.0f, 100L)
+            }
+
+            override fun onAnimationRepeat(id: Int) {
+                Log.d(MainActivity::class.java.simpleName, "onAnimationRepeat() id -> $id")
+            }
+
+            override fun onAnimationStart() {
+            }
+        })
+    }
+
+    private fun nextImage(id: Int): View = when (id) {
+        R.id.image1 -> image2
+        R.id.image2 -> image1
+        else -> image1
     }
 
     fun ex(permission: String) {
@@ -59,13 +71,14 @@ class MainActivity : AppCompatActivity() {
         Log.d(MainActivity::class.java.simpleName, "result: $line error: $line1")
     }
 
-    class MyAnimatorSet(private val activity: Activity, private var view: View) {
+    class MyAnimatorSet(private val activity: Activity, private var targetView: View) {
 
-        private val animatorSet = AnimatorSet()
+        private var animatorSet: AnimatorSet? = AnimatorSet()
         private var animationChangedListener: AnimationChangedListener? = null
 
         abstract class AnimationChangedListener {
-            open fun onAnimationEnd() {}
+            open fun onAnimationRepeat(id: Int) {}
+            open fun onAnimationEnd(id: Int) {}
             open fun onAnimationStart() {}
         }
 
@@ -77,11 +90,18 @@ class MainActivity : AppCompatActivity() {
             RIGHT_BOTTOM
         }
 
-        private fun start(delay: Long, duration: Long) {
-            animatorSet.startDelay = delay
-            animatorSet.duration = duration
-            activity.runOnUiThread {
-                animatorSet.start()
+        enum class RepeatType(val value: Int) {
+            REVERSE_MODE(REVERSE),
+            RESTART_MODE(RESTART)
+        }
+
+        private fun start(delay: Long, _duration: Long) {
+            animatorSet?.run {
+                startDelay = delay
+                duration = _duration
+                activity.runOnUiThread {
+                    start()
+                }   
             }
         }
 
@@ -106,25 +126,41 @@ class MainActivity : AppCompatActivity() {
         }
 
         fun changeTarget(_view: View) {
-            view = _view
-            animatorSet.setTarget(view)
-            activity.runOnUiThread {
-                animatorSet.start()
-            }
+            // before change target remove previous instance to animate object
+            animatorSet?.removeAllListeners()
+            animatorSet = null
+            animatorSet = AnimatorSet()
+            animatorSet?.addListener(object : Animator.AnimatorListener {
+                override fun onAnimationRepeat(animation: Animator?) {
+                    animationChangedListener?.onAnimationRepeat(targetView.id)
+                }
+
+                override fun onAnimationEnd(animation: Animator?) {
+                    animationChangedListener?.onAnimationEnd(targetView.id)
+                }
+
+                override fun onAnimationCancel(animation: Animator?) {
+                }
+
+                override fun onAnimationStart(animation: Animator?) {
+                    animationChangedListener?.onAnimationStart()
+                }
+            })
+            targetView = _view
         }
 
         fun setAnimationChangedListener(_animationChangedListener: AnimationChangedListener?) {
             animationChangedListener = _animationChangedListener
             if (animationChangedListener != null) {
-                animatorSet.removeAllListeners()
+                animatorSet?.removeAllListeners()
             }
-            animatorSet.addListener(object : Animator.AnimatorListener {
+            animatorSet?.addListener(object : Animator.AnimatorListener {
                 override fun onAnimationRepeat(animation: Animator?) {
-
+                    animationChangedListener?.onAnimationRepeat(targetView.id)
                 }
 
                 override fun onAnimationEnd(animation: Animator?) {
-                    animationChangedListener?.onAnimationEnd()
+                    animationChangedListener?.onAnimationEnd(targetView.id)
                 }
 
                 override fun onAnimationCancel(animation: Animator?) {
@@ -137,153 +173,162 @@ class MainActivity : AppCompatActivity() {
         }
 
         fun cancelAnimation() {
-            animatorSet.cancel()
+            animatorSet?.cancel()
         }
 
         fun alphaAnimation(
-            minAlpha: Float = view.alpha,
+            minAlpha: Float = targetView.alpha,
             maxAlpha: Float = 1.0f,
             delay: Long = 0L,
             duration: Long = 500L
         ) {
-            if (animatorSet.isRunning) animatorSet.cancel()
-            val alpha = ObjectAnimator.ofFloat(view, "alpha", minAlpha, maxAlpha)
-            animatorSet.play(alpha)
+            val alpha = ObjectAnimator.ofFloat(targetView, "alpha", minAlpha, maxAlpha)
+            animatorSet?.play(alpha)
             start(delay, duration)
         }
 
-        fun alphaAnimationInfite(
-            minAlpha: Float = view.alpha,
+        fun alphaAnimationInfinite(
+            minAlpha: Float = targetView.alpha,
             maxAlpha: Float = 1.0f,
+            mode: RepeatType = RepeatType.REVERSE_MODE,
             delay: Long = 0L,
             duration: Long = 500L
         ) {
-            if (animatorSet.isRunning) animatorSet.cancel()
-            val alpha = ObjectAnimator.ofFloat(view, "alpha", minAlpha, maxAlpha)
+            val alpha = ObjectAnimator.ofFloat(targetView, "alpha", minAlpha, maxAlpha)
             alpha.repeatCount = INFINITE
-            alpha.repeatMode = REVERSE
-            animatorSet.play(alpha)
+            alpha.repeatMode = mode.value
+            Log.d(MainActivity::class.java.simpleName, "alphaAnimationInfinite() repeatMode -> ${alpha.repeatMode}")
+            animatorSet?.play(alpha)
             start(delay, duration)
         }
 
         fun scaleAnimation(
-            minScale: PointF = PointF(view.scaleX, view.scaleY),
+            minScale: PointF = PointF(targetView.scaleX, targetView.scaleY),
             maxScale: PointF = PointF(1.0f, 1.0f),
             transformPivotType: TransformPivotType = TransformPivotType.CENTER,
             delay: Long = 0L,
             duration: Long = 500L
         ) {
-            if (animatorSet.isRunning) animatorSet.cancel()
-            val scaleDownY = ObjectAnimator.ofFloat(view, "scaleY", minScale.y, maxScale.y)
-            val scaleDownX = ObjectAnimator.ofFloat(view, "scaleX", minScale.x, maxScale.x)
+            val scaleDownY = ObjectAnimator.ofFloat(targetView, "scaleY", minScale.y, maxScale.y)
+            val scaleDownX = ObjectAnimator.ofFloat(targetView, "scaleX", minScale.x, maxScale.x)
             val transformPivot = getTranslationPivot(
                 transformPivotType,
-                PointF(view.measuredWidth.toFloat(), view.measuredHeight.toFloat())
+                PointF(targetView.measuredWidth.toFloat(), targetView.measuredHeight.toFloat())
             )
-            val pivotY = ObjectAnimator.ofFloat(view, "pivotY", transformPivot.y)
-            val pivotX = ObjectAnimator.ofFloat(view, "pivotX", transformPivot.x)
-            animatorSet.playTogether(scaleDownX, scaleDownY, pivotX, pivotY)
+            val pivotY = ObjectAnimator.ofFloat(targetView, "pivotY", transformPivot.y)
+            val pivotX = ObjectAnimator.ofFloat(targetView, "pivotX", transformPivot.x)
+            animatorSet?.playTogether(scaleDownX, scaleDownY, pivotX, pivotY)
             start(delay, duration)
         }
 
         fun scaleAnimationInfinite(
-            minScale: PointF = PointF(view.scaleX, view.scaleY),
+            minScale: PointF = PointF(targetView.scaleX, targetView.scaleY),
             maxScale: PointF = PointF(1.0f, 1.0f),
             transformPivotType: TransformPivotType = TransformPivotType.CENTER,
+            mode: RepeatType = RepeatType.REVERSE_MODE,
             delay: Long = 0L,
             duration: Long = 500L
         ) {
-            if (animatorSet.isRunning) animatorSet.cancel()
-            val scaleDownY = ObjectAnimator.ofFloat(view, "scaleY", minScale.y, maxScale.y)
-            val scaleDownX = ObjectAnimator.ofFloat(view, "scaleX", minScale.x, maxScale.x)
+            val scaleDownY = ObjectAnimator.ofFloat(targetView, "scaleY", minScale.y, maxScale.y)
+            val scaleDownX = ObjectAnimator.ofFloat(targetView, "scaleX", minScale.x, maxScale.x)
             val transformPivot = getTranslationPivot(
                 transformPivotType,
-                PointF(view.measuredWidth.toFloat(), view.measuredHeight.toFloat())
+                PointF(targetView.measuredWidth.toFloat(), targetView.measuredHeight.toFloat())
             )
-            val pivotY = ObjectAnimator.ofFloat(view, "pivotY", transformPivot.y)
-            val pivotX = ObjectAnimator.ofFloat(view, "pivotX", transformPivot.x)
+            val pivotY = ObjectAnimator.ofFloat(targetView, "pivotY", transformPivot.y)
+            val pivotX = ObjectAnimator.ofFloat(targetView, "pivotX", transformPivot.x)
             with(scaleDownX) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
             with(scaleDownY) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
             with(pivotX) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
             with(pivotY) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
-            animatorSet.playTogether(scaleDownX, scaleDownY, pivotX, pivotY)
+            animatorSet?.playTogether(scaleDownX, scaleDownY, pivotX, pivotY)
             start(delay, duration)
         }
 
         fun rotateAnimation(
-            src: PointF = PointF(view.rotationX, view.rotationY),
+            src: PointF = PointF(targetView.rotationX, targetView.rotationY),
             dst: PointF,
             transformPivotType: TransformPivotType = TransformPivotType.CENTER,
             delay: Long = 0L,
             duration: Long = 500L
         ) {
-            if (animatorSet.isRunning) animatorSet.cancel()
-            val rotationY = ObjectAnimator.ofFloat(view, "rotationY", src.y, dst.y)
-            val rotationX = ObjectAnimator.ofFloat(view, "rotationX", src.x, dst.x)
+            val rotationY = ObjectAnimator.ofFloat(targetView, "rotationY", src.y, dst.y)
+            val rotationX = ObjectAnimator.ofFloat(targetView, "rotationX", src.x, dst.x)
             val transformPivot = getTranslationPivot(
                 transformPivotType,
-                PointF(view.measuredWidth.toFloat(), view.measuredHeight.toFloat())
+                PointF(targetView.measuredWidth.toFloat(), targetView.measuredHeight.toFloat())
             )
-            val pivotY = ObjectAnimator.ofFloat(view, "pivotY", transformPivot.y)
-            val pivotX = ObjectAnimator.ofFloat(view, "pivotX", transformPivot.x)
-            animatorSet.playTogether(rotationX, rotationY, pivotX, pivotY)
+            val pivotY = ObjectAnimator.ofFloat(targetView, "pivotY", transformPivot.y)
+            val pivotX = ObjectAnimator.ofFloat(targetView, "pivotX", transformPivot.x)
+            animatorSet?.playTogether(rotationX, rotationY, pivotX, pivotY)
             start(delay, duration)
         }
 
         fun rotateAnimationInfinite(
-            src: PointF = PointF(view.rotationX, view.rotationY),
+            src: PointF = PointF(targetView.rotationX, targetView.rotationY),
             dst: PointF,
             transformPivotType: TransformPivotType = TransformPivotType.CENTER,
+            mode: RepeatType = RepeatType.REVERSE_MODE,
             delay: Long = 0L,
             duration: Long = 500L
         ) {
-            if (animatorSet.isRunning) animatorSet.cancel()
-            val rotationY = ObjectAnimator.ofFloat(view, "rotationY", src.y, dst.y)
-            val rotationX = ObjectAnimator.ofFloat(view, "rotationX", src.x, dst.x)
+            val rotationY = ObjectAnimator.ofFloat(targetView, "rotationY", src.y, dst.y)
+            val rotationX = ObjectAnimator.ofFloat(targetView, "rotationX", src.x, dst.x)
             val transformPivot = getTranslationPivot(
                 transformPivotType,
-                PointF(view.measuredWidth.toFloat(), view.measuredHeight.toFloat())
+                PointF(targetView.measuredWidth.toFloat(), targetView.measuredHeight.toFloat())
             )
-            val pivotY = ObjectAnimator.ofFloat(view, "pivotY", transformPivot.y)
-            val pivotX = ObjectAnimator.ofFloat(view, "pivotX", transformPivot.x)
+            val pivotY = ObjectAnimator.ofFloat(targetView, "pivotY", transformPivot.y)
+            val pivotX = ObjectAnimator.ofFloat(targetView, "pivotX", transformPivot.x)
             with(rotationX) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
             with(rotationY) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
             with(pivotX) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
             with(pivotY) {
                 repeatCount = INFINITE
-                repeatMode = REVERSE
+                repeatMode = mode.value
             }
-            animatorSet.playTogether(rotationX, rotationY, pivotX, pivotY)
+            animatorSet?.playTogether(rotationX, rotationY, pivotX, pivotY)
             start(delay, duration)
         }
 
         fun clockwiseRotationAnimation(
-            src: Float = view.rotation,
+            src: Float = targetView.rotation,
             degree: Float, delay: Long = 0L, duration: Long = 500L
         ) {
-            val rotation = ObjectAnimator.ofFloat(view, "rotation", src, degree)
-            animatorSet.play(rotation)
+            val rotation = ObjectAnimator.ofFloat(targetView, "rotation", src, degree)
+            animatorSet?.play(rotation)
+            start(delay, duration)
+        }
+
+        fun clockwiseRotationAnimationInfinite(
+            src: Float = targetView.rotation,
+            degree: Float, delay: Long = 0L, duration: Long = 500L,
+            mode: RepeatType = RepeatType.REVERSE_MODE
+        ) {
+            val rotation = ObjectAnimator.ofFloat(targetView, "rotation", src, degree)
+            rotation.repeatMode = mode.value
+            animatorSet?.play(rotation)
             start(delay, duration)
         }
 
@@ -293,9 +338,24 @@ class MainActivity : AppCompatActivity() {
             delay: Long = 0L,
             duration: Long = 500L
         ) {
-            val transY = ObjectAnimator.ofFloat(view, "translationY", src.y, dst.y)
-            val transX = ObjectAnimator.ofFloat(view, "translationX", src.x, dst.x)
-            animatorSet.play(transX).with(transY)
+            val transY = ObjectAnimator.ofFloat(targetView, "translationY", src.y, dst.y)
+            val transX = ObjectAnimator.ofFloat(targetView, "translationX", src.x, dst.x)
+            animatorSet?.play(transX)?.with(transY)
+            start(delay, duration)
+        }
+
+        fun translationAnimationInfinite(
+            src: PointF,
+            dst: PointF,
+            mode: RepeatType = RepeatType.REVERSE_MODE,
+            delay: Long = 0L,
+            duration: Long = 500L
+        ) {
+            val transY = ObjectAnimator.ofFloat(targetView, "translationY", src.y, dst.y)
+            val transX = ObjectAnimator.ofFloat(targetView, "translationX", src.x, dst.x)
+            transY.repeatMode = mode.value
+            transX.repeatMode = mode.value
+            animatorSet?.play(transX)?.with(transY)
             start(delay, duration)
         }
     }
